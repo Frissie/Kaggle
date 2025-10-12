@@ -1,1 +1,1050 @@
-{"metadata":{"kernelspec":{"language":"python","display_name":"Python 3","name":"python3"},"language_info":{"name":"python","version":"3.11.13","mimetype":"text/x-python","codemirror_mode":{"name":"ipython","version":3},"pygments_lexer":"ipython3","nbconvert_exporter":"python","file_extension":".py"},"kaggle":{"accelerator":"none","dataSources":[{"sourceId":3136,"databundleVersionId":26502,"isSourceIdPinned":false,"sourceType":"competition"}],"dockerImageVersionId":31089,"isInternetEnabled":true,"language":"python","sourceType":"notebook","isGpuEnabled":false}},"nbformat_minor":4,"nbformat":4,"cells":[{"cell_type":"code","source":"# This Python 3 environment comes with many helpful analytics libraries installed\n# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python\n# For example, here's several helpful packages to load\n\nimport numpy as np # linear algebra\nimport pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)\n\n# Input data files are available in the read-only \"../input/\" directory\n# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory\n\nimport os\nfor dirname, _, filenames in os.walk('/kaggle/input'):\n    for filename in filenames:\n        print(os.path.join(dirname, filename))\n\n# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using \"Save & Run All\" \n# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session","metadata":{"_uuid":"8f2839f25d086af736a60e9eeb907d3b93b6e0e5","_cell_guid":"b1076dfc-b9ad-4769-8c92-a6c4dae69d19","trusted":true,"execution":{"iopub.status.busy":"2025-10-12T10:50:40.222431Z","iopub.execute_input":"2025-10-12T10:50:40.222746Z","iopub.status.idle":"2025-10-12T10:50:42.573361Z","shell.execute_reply.started":"2025-10-12T10:50:40.222722Z","shell.execute_reply":"2025-10-12T10:50:42.571753Z"}},"outputs":[{"name":"stdout","text":"/kaggle/input/titanic/train.csv\n/kaggle/input/titanic/test.csv\n/kaggle/input/titanic/gender_submission.csv\n","output_type":"stream"}],"execution_count":1},{"cell_type":"markdown","source":"# Import modules","metadata":{}},{"cell_type":"code","source":"import pandas as pd\nimport numpy as np\nimport seaborn as sns\nimport warnings\n\nfrom sklearn.metrics import confusion_matrix\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler, MinMaxScaler\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.linear_model import LogisticRegression\n\n# warnings\nwarnings.filterwarnings(\"ignore\")","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2025-10-12T10:50:42.576213Z","iopub.execute_input":"2025-10-12T10:50:42.576600Z","iopub.status.idle":"2025-10-12T10:50:44.908578Z","shell.execute_reply.started":"2025-10-12T10:50:42.576576Z","shell.execute_reply":"2025-10-12T10:50:44.907473Z"}},"outputs":[],"execution_count":2},{"cell_type":"markdown","source":"# Import Data","metadata":{"execution":{"iopub.status.busy":"2025-10-12T10:16:38.612560Z","iopub.execute_input":"2025-10-12T10:16:38.613448Z","iopub.status.idle":"2025-10-12T10:16:38.630238Z","shell.execute_reply.started":"2025-10-12T10:16:38.613408Z","shell.execute_reply":"2025-10-12T10:16:38.629241Z"}}},{"cell_type":"code","source":"columnOrder = [\n 'Survived',\n 'PassengerId',\n 'Pclass',\n 'Name',\n 'Sex',\n 'Age',\n 'SibSp',\n 'Parch',\n 'Ticket',\n 'Fare', \n 'Cabin',\n 'Embarked'\n]\ncolumnDrop = [\n 'PassengerId',\n 'Name',\n 'Ticket',\n 'Cabin',\n 'SibSp',\n 'Parch',\n]\ncolumnNumeric = [\n 'Age',\n 'Fare',\n 'FamilySize'\n]\ncolumnCategory = [\n 'Pclass',\n 'Sex',\n 'Embarked'\n]\n\ndf = pd.read_csv(\"/kaggle/input/titanic/train.csv\")[columnOrder]\nprint(df.info())\ndf.describe(include='all')","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2025-10-12T10:51:39.302339Z","iopub.execute_input":"2025-10-12T10:51:39.302662Z","iopub.status.idle":"2025-10-12T10:51:39.352289Z","shell.execute_reply.started":"2025-10-12T10:51:39.302638Z","shell.execute_reply":"2025-10-12T10:51:39.351271Z"}},"outputs":[{"name":"stdout","text":"<class 'pandas.core.frame.DataFrame'>\nRangeIndex: 891 entries, 0 to 890\nData columns (total 12 columns):\n #   Column       Non-Null Count  Dtype  \n---  ------       --------------  -----  \n 0   Survived     891 non-null    int64  \n 1   PassengerId  891 non-null    int64  \n 2   Pclass       891 non-null    int64  \n 3   Name         891 non-null    object \n 4   Sex          891 non-null    object \n 5   Age          714 non-null    float64\n 6   SibSp        891 non-null    int64  \n 7   Parch        891 non-null    int64  \n 8   Ticket       891 non-null    object \n 9   Fare         891 non-null    float64\n 10  Cabin        204 non-null    object \n 11  Embarked     889 non-null    object \ndtypes: float64(2), int64(5), object(5)\nmemory usage: 83.7+ KB\nNone\n","output_type":"stream"},{"execution_count":5,"output_type":"execute_result","data":{"text/plain":"          Survived  PassengerId      Pclass                     Name   Sex  \\\ncount   891.000000   891.000000  891.000000                      891   891   \nunique         NaN          NaN         NaN                      891     2   \ntop            NaN          NaN         NaN  Braund, Mr. Owen Harris  male   \nfreq           NaN          NaN         NaN                        1   577   \nmean      0.383838   446.000000    2.308642                      NaN   NaN   \nstd       0.486592   257.353842    0.836071                      NaN   NaN   \nmin       0.000000     1.000000    1.000000                      NaN   NaN   \n25%       0.000000   223.500000    2.000000                      NaN   NaN   \n50%       0.000000   446.000000    3.000000                      NaN   NaN   \n75%       1.000000   668.500000    3.000000                      NaN   NaN   \nmax       1.000000   891.000000    3.000000                      NaN   NaN   \n\n               Age       SibSp       Parch  Ticket        Fare    Cabin  \\\ncount   714.000000  891.000000  891.000000     891  891.000000      204   \nunique         NaN         NaN         NaN     681         NaN      147   \ntop            NaN         NaN         NaN  347082         NaN  B96 B98   \nfreq           NaN         NaN         NaN       7         NaN        4   \nmean     29.699118    0.523008    0.381594     NaN   32.204208      NaN   \nstd      14.526497    1.102743    0.806057     NaN   49.693429      NaN   \nmin       0.420000    0.000000    0.000000     NaN    0.000000      NaN   \n25%      20.125000    0.000000    0.000000     NaN    7.910400      NaN   \n50%      28.000000    0.000000    0.000000     NaN   14.454200      NaN   \n75%      38.000000    1.000000    0.000000     NaN   31.000000      NaN   \nmax      80.000000    8.000000    6.000000     NaN  512.329200      NaN   \n\n       Embarked  \ncount       889  \nunique        3  \ntop           S  \nfreq        644  \nmean        NaN  \nstd         NaN  \nmin         NaN  \n25%         NaN  \n50%         NaN  \n75%         NaN  \nmax         NaN  ","text/html":"<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>Survived</th>\n      <th>PassengerId</th>\n      <th>Pclass</th>\n      <th>Name</th>\n      <th>Sex</th>\n      <th>Age</th>\n      <th>SibSp</th>\n      <th>Parch</th>\n      <th>Ticket</th>\n      <th>Fare</th>\n      <th>Cabin</th>\n      <th>Embarked</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>count</th>\n      <td>891.000000</td>\n      <td>891.000000</td>\n      <td>891.000000</td>\n      <td>891</td>\n      <td>891</td>\n      <td>714.000000</td>\n      <td>891.000000</td>\n      <td>891.000000</td>\n      <td>891</td>\n      <td>891.000000</td>\n      <td>204</td>\n      <td>889</td>\n    </tr>\n    <tr>\n      <th>unique</th>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>891</td>\n      <td>2</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>681</td>\n      <td>NaN</td>\n      <td>147</td>\n      <td>3</td>\n    </tr>\n    <tr>\n      <th>top</th>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>Braund, Mr. Owen Harris</td>\n      <td>male</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>347082</td>\n      <td>NaN</td>\n      <td>B96 B98</td>\n      <td>S</td>\n    </tr>\n    <tr>\n      <th>freq</th>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>1</td>\n      <td>577</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>7</td>\n      <td>NaN</td>\n      <td>4</td>\n      <td>644</td>\n    </tr>\n    <tr>\n      <th>mean</th>\n      <td>0.383838</td>\n      <td>446.000000</td>\n      <td>2.308642</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>29.699118</td>\n      <td>0.523008</td>\n      <td>0.381594</td>\n      <td>NaN</td>\n      <td>32.204208</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n    <tr>\n      <th>std</th>\n      <td>0.486592</td>\n      <td>257.353842</td>\n      <td>0.836071</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>14.526497</td>\n      <td>1.102743</td>\n      <td>0.806057</td>\n      <td>NaN</td>\n      <td>49.693429</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n    <tr>\n      <th>min</th>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>0.420000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>NaN</td>\n      <td>0.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n    <tr>\n      <th>25%</th>\n      <td>0.000000</td>\n      <td>223.500000</td>\n      <td>2.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>20.125000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>NaN</td>\n      <td>7.910400</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n    <tr>\n      <th>50%</th>\n      <td>0.000000</td>\n      <td>446.000000</td>\n      <td>3.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>28.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>NaN</td>\n      <td>14.454200</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n    <tr>\n      <th>75%</th>\n      <td>1.000000</td>\n      <td>668.500000</td>\n      <td>3.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>38.000000</td>\n      <td>1.000000</td>\n      <td>0.000000</td>\n      <td>NaN</td>\n      <td>31.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n    <tr>\n      <th>max</th>\n      <td>1.000000</td>\n      <td>891.000000</td>\n      <td>3.000000</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>80.000000</td>\n      <td>8.000000</td>\n      <td>6.000000</td>\n      <td>NaN</td>\n      <td>512.329200</td>\n      <td>NaN</td>\n      <td>NaN</td>\n    </tr>\n  </tbody>\n</table>\n</div>"},"metadata":{}}],"execution_count":5},{"cell_type":"code","source":"def DataFrameCleaner(DataFrame):\n    DataFrame[\"FamilySize\"] = DataFrame.SibSp + DataFrame.Parch + 1\n    DataFrame.drop(columnDrop, inplace=True, axis=1)\n    return DataFrame\n","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2025-10-12T10:56:53.552015Z","iopub.execute_input":"2025-10-12T10:56:53.552398Z","iopub.status.idle":"2025-10-12T10:56:53.557506Z","shell.execute_reply.started":"2025-10-12T10:56:53.552371Z","shell.execute_reply":"2025-10-12T10:56:53.556402Z"}},"outputs":[],"execution_count":6},{"cell_type":"markdown","source":"# Preparing Data\n## Train Test Split","metadata":{}},{"cell_type":"code","source":"df_prep = df.copy()\n\nDataFrameCleaner(df_prep)\n\nrs = 4\ny = df_prep.iloc[:, 0].copy()\nX = df_prep.iloc[:, 1:].copy()\n\nprint(y.head(), X.head())\nprint(y.shape, X.shape)\n\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.9, random_state = rs)\nprint(X_train.shape, X_test.shape, y_train.shape, y_test.shape)","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2025-10-12T10:57:04.414596Z","iopub.execute_input":"2025-10-12T10:57:04.414953Z","iopub.status.idle":"2025-10-12T10:57:04.432355Z","shell.execute_reply.started":"2025-10-12T10:57:04.414928Z","shell.execute_reply":"2025-10-12T10:57:04.431288Z"}},"outputs":[{"name":"stdout","text":"0    0\n1    1\n2    1\n3    1\n4    0\nName: Survived, dtype: int64    Pclass     Sex   Age     Fare Embarked  FamilySize\n0       3    male  22.0   7.2500        S           2\n1       1  female  38.0  71.2833        C           2\n2       3  female  26.0   7.9250        S           1\n3       1  female  35.0  53.1000        S           2\n4       3    male  35.0   8.0500        S           1\n(891,) (891, 6)\n(801, 6) (90, 6) (801,) (90,)\n","output_type":"stream"}],"execution_count":7},{"cell_type":"markdown","source":"## Creating Pipeline","metadata":{}},{"cell_type":"code","source":"numericTransformer = Pipeline([\n    (\"imputer\", SimpleImputer(strategy=\"mean\")),\n    (\"scaler\", StandardScaler())\n])\n\ncategoryTransformer = Pipeline([\n    (\"imputer\", SimpleImputer(strategy=\"most_frequent\")),\n    (\"ohe\", OneHotEncoder(drop='first', handle_unknown='ignore'))\n])\n\npreprocessorLine = ColumnTransformer([\n    (\"num\", numericTransformer, columnNumeric),\n    (\"cat\", categoryTransformer, columnCategory)\n])\n\nmodel = Pipeline([\n    (\"prep\", preprocessorLine),\n    (\"logic\", LogisticRegression())\n])","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2025-10-12T11:11:22.632637Z","iopub.execute_input":"2025-10-12T11:11:22.633126Z","iopub.status.idle":"2025-10-12T11:11:22.640251Z","shell.execute_reply.started":"2025-10-12T11:11:22.633005Z","shell.execute_reply":"2025-10-12T11:11:22.638587Z"}},"outputs":[],"execution_count":12},{"cell_type":"markdown","source":"## Model fitting","metadata":{}},{"cell_type":"code","source":"model.fit(X_train, y_train)\nprint(\"model score: %.3f\" % model.score(X_test, y_test))","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2025-10-12T11:11:47.164992Z","iopub.execute_input":"2025-10-12T11:11:47.165370Z","iopub.status.idle":"2025-10-12T11:11:47.268474Z","shell.execute_reply.started":"2025-10-12T11:11:47.165345Z","shell.execute_reply":"2025-10-12T11:11:47.267251Z"}},"outputs":[{"name":"stdout","text":"model score: 0.856\n","output_type":"stream"}],"execution_count":14}]}
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "ccaf8cc8",
+   "metadata": {
+    "_cell_guid": "b1076dfc-b9ad-4769-8c92-a6c4dae69d19",
+    "_uuid": "8f2839f25d086af736a60e9eeb907d3b93b6e0e5",
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:02.001295Z",
+     "iopub.status.busy": "2025-10-12T11:32:02.000993Z",
+     "iopub.status.idle": "2025-10-12T11:32:03.833575Z",
+     "shell.execute_reply": "2025-10-12T11:32:03.832624Z"
+    },
+    "papermill": {
+     "duration": 1.840083,
+     "end_time": "2025-10-12T11:32:03.835201",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:01.995118",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "/kaggle/input/titanic/train.csv\n",
+      "/kaggle/input/titanic/test.csv\n",
+      "/kaggle/input/titanic/gender_submission.csv\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This Python 3 environment comes with many helpful analytics libraries installed\n",
+    "# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python\n",
+    "# For example, here's several helpful packages to load\n",
+    "\n",
+    "import numpy as np # linear algebra\n",
+    "import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)\n",
+    "\n",
+    "# Input data files are available in the read-only \"../input/\" directory\n",
+    "# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory\n",
+    "\n",
+    "import os\n",
+    "for dirname, _, filenames in os.walk('/kaggle/input'):\n",
+    "    for filename in filenames:\n",
+    "        print(os.path.join(dirname, filename))\n",
+    "\n",
+    "# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using \"Save & Run All\" \n",
+    "# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "fde7471c",
+   "metadata": {
+    "papermill": {
+     "duration": 0.002993,
+     "end_time": "2025-10-12T11:32:03.841731",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:03.838738",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Import modules"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "7916c0ba",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:03.849671Z",
+     "iopub.status.busy": "2025-10-12T11:32:03.849180Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.261383Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.260505Z"
+    },
+    "papermill": {
+     "duration": 2.418202,
+     "end_time": "2025-10-12T11:32:06.263226",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:03.845024",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import seaborn as sns\n",
+    "import warnings\n",
+    "\n",
+    "from sklearn.metrics import confusion_matrix\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.impute import SimpleImputer\n",
+    "from sklearn.preprocessing import OneHotEncoder, StandardScaler, MinMaxScaler\n",
+    "from sklearn.pipeline import Pipeline\n",
+    "from sklearn.compose import ColumnTransformer\n",
+    "from sklearn.linear_model import LogisticRegression\n",
+    "\n",
+    "# warnings\n",
+    "warnings.filterwarnings(\"ignore\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "82d78abe",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T10:16:38.613448Z",
+     "iopub.status.busy": "2025-10-12T10:16:38.612560Z",
+     "iopub.status.idle": "2025-10-12T10:16:38.630238Z",
+     "shell.execute_reply": "2025-10-12T10:16:38.629241Z",
+     "shell.execute_reply.started": "2025-10-12T10:16:38.613408Z"
+    },
+    "papermill": {
+     "duration": 0.003034,
+     "end_time": "2025-10-12T11:32:06.269703",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.266669",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Import Data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "f1a012e7",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.277360Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.276897Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.365447Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.364608Z"
+    },
+    "papermill": {
+     "duration": 0.094129,
+     "end_time": "2025-10-12T11:32:06.367015",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.272886",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "Index: 891 entries, 1 to 891\n",
+      "Data columns (total 11 columns):\n",
+      " #   Column    Non-Null Count  Dtype  \n",
+      "---  ------    --------------  -----  \n",
+      " 0   Survived  891 non-null    int64  \n",
+      " 1   Pclass    891 non-null    int64  \n",
+      " 2   Name      891 non-null    object \n",
+      " 3   Sex       891 non-null    object \n",
+      " 4   Age       714 non-null    float64\n",
+      " 5   SibSp     891 non-null    int64  \n",
+      " 6   Parch     891 non-null    int64  \n",
+      " 7   Ticket    891 non-null    object \n",
+      " 8   Fare      891 non-null    float64\n",
+      " 9   Cabin     204 non-null    object \n",
+      " 10  Embarked  889 non-null    object \n",
+      "dtypes: float64(2), int64(4), object(5)\n",
+      "memory usage: 83.5+ KB\n",
+      "None\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Survived</th>\n",
+       "      <th>Pclass</th>\n",
+       "      <th>Name</th>\n",
+       "      <th>Sex</th>\n",
+       "      <th>Age</th>\n",
+       "      <th>SibSp</th>\n",
+       "      <th>Parch</th>\n",
+       "      <th>Ticket</th>\n",
+       "      <th>Fare</th>\n",
+       "      <th>Cabin</th>\n",
+       "      <th>Embarked</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>count</th>\n",
+       "      <td>891.000000</td>\n",
+       "      <td>891.000000</td>\n",
+       "      <td>891</td>\n",
+       "      <td>891</td>\n",
+       "      <td>714.000000</td>\n",
+       "      <td>891.000000</td>\n",
+       "      <td>891.000000</td>\n",
+       "      <td>891</td>\n",
+       "      <td>891.000000</td>\n",
+       "      <td>204</td>\n",
+       "      <td>889</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>unique</th>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>891</td>\n",
+       "      <td>2</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>681</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>147</td>\n",
+       "      <td>3</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>top</th>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>Braund, Mr. Owen Harris</td>\n",
+       "      <td>male</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>347082</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>B96 B98</td>\n",
+       "      <td>S</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>freq</th>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>1</td>\n",
+       "      <td>577</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>7</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>4</td>\n",
+       "      <td>644</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>mean</th>\n",
+       "      <td>0.383838</td>\n",
+       "      <td>2.308642</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>29.699118</td>\n",
+       "      <td>0.523008</td>\n",
+       "      <td>0.381594</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>32.204208</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>std</th>\n",
+       "      <td>0.486592</td>\n",
+       "      <td>0.836071</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>14.526497</td>\n",
+       "      <td>1.102743</td>\n",
+       "      <td>0.806057</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>49.693429</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>min</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>0.420000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>25%</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>2.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>20.125000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>7.910400</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>50%</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>3.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>28.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>14.454200</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>75%</th>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>3.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>38.000000</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>31.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>max</th>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>3.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>80.000000</td>\n",
+       "      <td>8.000000</td>\n",
+       "      <td>6.000000</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>512.329200</td>\n",
+       "      <td>NaN</td>\n",
+       "      <td>NaN</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "          Survived      Pclass                     Name   Sex         Age  \\\n",
+       "count   891.000000  891.000000                      891   891  714.000000   \n",
+       "unique         NaN         NaN                      891     2         NaN   \n",
+       "top            NaN         NaN  Braund, Mr. Owen Harris  male         NaN   \n",
+       "freq           NaN         NaN                        1   577         NaN   \n",
+       "mean      0.383838    2.308642                      NaN   NaN   29.699118   \n",
+       "std       0.486592    0.836071                      NaN   NaN   14.526497   \n",
+       "min       0.000000    1.000000                      NaN   NaN    0.420000   \n",
+       "25%       0.000000    2.000000                      NaN   NaN   20.125000   \n",
+       "50%       0.000000    3.000000                      NaN   NaN   28.000000   \n",
+       "75%       1.000000    3.000000                      NaN   NaN   38.000000   \n",
+       "max       1.000000    3.000000                      NaN   NaN   80.000000   \n",
+       "\n",
+       "             SibSp       Parch  Ticket        Fare    Cabin Embarked  \n",
+       "count   891.000000  891.000000     891  891.000000      204      889  \n",
+       "unique         NaN         NaN     681         NaN      147        3  \n",
+       "top            NaN         NaN  347082         NaN  B96 B98        S  \n",
+       "freq           NaN         NaN       7         NaN        4      644  \n",
+       "mean      0.523008    0.381594     NaN   32.204208      NaN      NaN  \n",
+       "std       1.102743    0.806057     NaN   49.693429      NaN      NaN  \n",
+       "min       0.000000    0.000000     NaN    0.000000      NaN      NaN  \n",
+       "25%       0.000000    0.000000     NaN    7.910400      NaN      NaN  \n",
+       "50%       0.000000    0.000000     NaN   14.454200      NaN      NaN  \n",
+       "75%       1.000000    0.000000     NaN   31.000000      NaN      NaN  \n",
+       "max       8.000000    6.000000     NaN  512.329200      NaN      NaN  "
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "columnOrder = [\n",
+    " 'Survived',\n",
+    " 'Pclass',\n",
+    " 'Name',\n",
+    " 'Sex',\n",
+    " 'Age',\n",
+    " 'SibSp',\n",
+    " 'Parch',\n",
+    " 'Ticket',\n",
+    " 'Fare', \n",
+    " 'Cabin',\n",
+    " 'Embarked'\n",
+    "]\n",
+    "columnDrop = [\n",
+    " 'Name',\n",
+    " 'Ticket',\n",
+    " 'Cabin',\n",
+    " 'SibSp',\n",
+    " 'Parch',\n",
+    "]\n",
+    "columnNumeric = [\n",
+    " 'Age',\n",
+    " 'Fare',\n",
+    " 'FamilySize'\n",
+    "]\n",
+    "columnCategory = [\n",
+    " 'Pclass',\n",
+    " 'Sex',\n",
+    " 'Embarked'\n",
+    "]\n",
+    "\n",
+    "df = pd.read_csv(\"/kaggle/input/titanic/train.csv\", index_col=0)[columnOrder]\n",
+    "print(df.info())\n",
+    "df.describe(include='all')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "1d9d8e68",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.375696Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.375361Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.380384Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.379599Z"
+    },
+    "papermill": {
+     "duration": 0.011195,
+     "end_time": "2025-10-12T11:32:06.381926",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.370731",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def DataFrameCleaner(DataFrame):\n",
+    "    DataFrame[\"FamilySize\"] = DataFrame.SibSp + DataFrame.Parch + 1\n",
+    "    DataFrame.drop(columnDrop, inplace=True, axis=1)\n",
+    "    return DataFrame\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "f027ebc6",
+   "metadata": {
+    "papermill": {
+     "duration": 0.003352,
+     "end_time": "2025-10-12T11:32:06.389039",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.385687",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Preparing Data\n",
+    "## Train Test Split"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "660331b6",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.397250Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.396935Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.412537Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.411505Z"
+    },
+    "papermill": {
+     "duration": 0.021587,
+     "end_time": "2025-10-12T11:32:06.414109",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.392522",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "PassengerId\n",
+      "1    0\n",
+      "2    1\n",
+      "3    1\n",
+      "4    1\n",
+      "5    0\n",
+      "Name: Survived, dtype: int64              Pclass     Sex   Age     Fare Embarked  FamilySize\n",
+      "PassengerId                                                    \n",
+      "1                 3    male  22.0   7.2500        S           2\n",
+      "2                 1  female  38.0  71.2833        C           2\n",
+      "3                 3  female  26.0   7.9250        S           1\n",
+      "4                 1  female  35.0  53.1000        S           2\n",
+      "5                 3    male  35.0   8.0500        S           1\n",
+      "(891,) (891, 6)\n",
+      "(801, 6) (90, 6) (801,) (90,)\n"
+     ]
+    }
+   ],
+   "source": [
+    "df_prep = df.copy()\n",
+    "\n",
+    "DataFrameCleaner(df_prep)\n",
+    "\n",
+    "rs = 4\n",
+    "y = df_prep.iloc[:, 0].copy()\n",
+    "X = df_prep.iloc[:, 1:].copy()\n",
+    "\n",
+    "print(y.head(), X.head())\n",
+    "print(y.shape, X.shape)\n",
+    "\n",
+    "\n",
+    "X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.9, random_state = rs)\n",
+    "print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9b78bf77",
+   "metadata": {
+    "papermill": {
+     "duration": 0.003353,
+     "end_time": "2025-10-12T11:32:06.421367",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.418014",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Creating Pipeline"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "bed81a55",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.429714Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.429285Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.435602Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.434376Z"
+    },
+    "papermill": {
+     "duration": 0.012565,
+     "end_time": "2025-10-12T11:32:06.437425",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.424860",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "numericTransformer = Pipeline([\n",
+    "    (\"imputer\", SimpleImputer(strategy=\"mean\")),\n",
+    "    (\"scaler\", StandardScaler())\n",
+    "])\n",
+    "\n",
+    "categoryTransformer = Pipeline([\n",
+    "    (\"imputer\", SimpleImputer(strategy=\"most_frequent\")),\n",
+    "    (\"ohe\", OneHotEncoder(drop='first', handle_unknown='ignore'))\n",
+    "])\n",
+    "\n",
+    "preprocessorLine = ColumnTransformer([\n",
+    "    (\"num\", numericTransformer, columnNumeric),\n",
+    "    (\"cat\", categoryTransformer, columnCategory)\n",
+    "])\n",
+    "\n",
+    "model = Pipeline([\n",
+    "    (\"prep\", preprocessorLine),\n",
+    "    (\"logic\", LogisticRegression())\n",
+    "])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "28a38506",
+   "metadata": {
+    "papermill": {
+     "duration": 0.003368,
+     "end_time": "2025-10-12T11:32:06.445450",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.442082",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Model fitting"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "3de1c248",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.454024Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.453624Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.610945Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.610038Z"
+    },
+    "papermill": {
+     "duration": 0.163714,
+     "end_time": "2025-10-12T11:32:06.612836",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.449122",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "model score: 0.856\n"
+     ]
+    }
+   ],
+   "source": [
+    "model.fit(X_train, y_train)\n",
+    "print(\"model score: %.3f\" % model.score(X_test, y_test))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "aaceb69f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.625940Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.625593Z",
+     "iopub.status.idle": "2025-10-12T11:32:06.912377Z",
+     "shell.execute_reply": "2025-10-12T11:32:06.911433Z"
+    },
+    "papermill": {
+     "duration": 0.294903,
+     "end_time": "2025-10-12T11:32:06.913824",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.618921",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.8555555555555555\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 640x480 with 2 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "y_predict = model.predict(X_test)\n",
+    "cm = confusion_matrix(y_test, y_predict)\n",
+    "sns.heatmap(cm, cmap=\"YlGnBu\", annot=True, fmt='g')\n",
+    "print((cm[0,0]+cm[1,1])/cm.sum())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "7eb334e9",
+   "metadata": {
+    "papermill": {
+     "duration": 0.003702,
+     "end_time": "2025-10-12T11:32:06.921597",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.917895",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Setting Model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "ea099006",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:06.930391Z",
+     "iopub.status.busy": "2025-10-12T11:32:06.930082Z",
+     "iopub.status.idle": "2025-10-12T11:32:07.087437Z",
+     "shell.execute_reply": "2025-10-12T11:32:07.086642Z"
+    },
+    "papermill": {
+     "duration": 0.163992,
+     "end_time": "2025-10-12T11:32:07.089261",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:06.925269",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<style>#sk-container-id-1 {color: black;background-color: white;}#sk-container-id-1 pre{padding: 0;}#sk-container-id-1 div.sk-toggleable {background-color: white;}#sk-container-id-1 label.sk-toggleable__label {cursor: pointer;display: block;width: 100%;margin-bottom: 0;padding: 0.3em;box-sizing: border-box;text-align: center;}#sk-container-id-1 label.sk-toggleable__label-arrow:before {content: \"▸\";float: left;margin-right: 0.25em;color: #696969;}#sk-container-id-1 label.sk-toggleable__label-arrow:hover:before {color: black;}#sk-container-id-1 div.sk-estimator:hover label.sk-toggleable__label-arrow:before {color: black;}#sk-container-id-1 div.sk-toggleable__content {max-height: 0;max-width: 0;overflow: hidden;text-align: left;background-color: #f0f8ff;}#sk-container-id-1 div.sk-toggleable__content pre {margin: 0.2em;color: black;border-radius: 0.25em;background-color: #f0f8ff;}#sk-container-id-1 input.sk-toggleable__control:checked~div.sk-toggleable__content {max-height: 200px;max-width: 100%;overflow: auto;}#sk-container-id-1 input.sk-toggleable__control:checked~label.sk-toggleable__label-arrow:before {content: \"▾\";}#sk-container-id-1 div.sk-estimator input.sk-toggleable__control:checked~label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 div.sk-label input.sk-toggleable__control:checked~label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 input.sk-hidden--visually {border: 0;clip: rect(1px 1px 1px 1px);clip: rect(1px, 1px, 1px, 1px);height: 1px;margin: -1px;overflow: hidden;padding: 0;position: absolute;width: 1px;}#sk-container-id-1 div.sk-estimator {font-family: monospace;background-color: #f0f8ff;border: 1px dotted black;border-radius: 0.25em;box-sizing: border-box;margin-bottom: 0.5em;}#sk-container-id-1 div.sk-estimator:hover {background-color: #d4ebff;}#sk-container-id-1 div.sk-parallel-item::after {content: \"\";width: 100%;border-bottom: 1px solid gray;flex-grow: 1;}#sk-container-id-1 div.sk-label:hover label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 div.sk-serial::before {content: \"\";position: absolute;border-left: 1px solid gray;box-sizing: border-box;top: 0;bottom: 0;left: 50%;z-index: 0;}#sk-container-id-1 div.sk-serial {display: flex;flex-direction: column;align-items: center;background-color: white;padding-right: 0.2em;padding-left: 0.2em;position: relative;}#sk-container-id-1 div.sk-item {position: relative;z-index: 1;}#sk-container-id-1 div.sk-parallel {display: flex;align-items: stretch;justify-content: center;background-color: white;position: relative;}#sk-container-id-1 div.sk-item::before, #sk-container-id-1 div.sk-parallel-item::before {content: \"\";position: absolute;border-left: 1px solid gray;box-sizing: border-box;top: 0;bottom: 0;left: 50%;z-index: -1;}#sk-container-id-1 div.sk-parallel-item {display: flex;flex-direction: column;z-index: 1;position: relative;background-color: white;}#sk-container-id-1 div.sk-parallel-item:first-child::after {align-self: flex-end;width: 50%;}#sk-container-id-1 div.sk-parallel-item:last-child::after {align-self: flex-start;width: 50%;}#sk-container-id-1 div.sk-parallel-item:only-child::after {width: 0;}#sk-container-id-1 div.sk-dashed-wrapped {border: 1px dashed gray;margin: 0 0.4em 0.5em 0.4em;box-sizing: border-box;padding-bottom: 0.4em;background-color: white;}#sk-container-id-1 div.sk-label label {font-family: monospace;font-weight: bold;display: inline-block;line-height: 1.2em;}#sk-container-id-1 div.sk-label-container {text-align: center;}#sk-container-id-1 div.sk-container {/* jupyter's `normalize.less` sets `[hidden] { display: none; }` but bootstrap.min.css set `[hidden] { display: none !important; }` so we also need the `!important` here to be able to override the default hidden behavior on the sphinx rendered scikit-learn.org. See: https://github.com/scikit-learn/scikit-learn/issues/21755 */display: inline-block !important;position: relative;}#sk-container-id-1 div.sk-text-repr-fallback {display: none;}</style><div id=\"sk-container-id-1\" class=\"sk-top-container\"><div class=\"sk-text-repr-fallback\"><pre>Pipeline(steps=[(&#x27;prep&#x27;,\n",
+       "                 ColumnTransformer(transformers=[(&#x27;num&#x27;,\n",
+       "                                                  Pipeline(steps=[(&#x27;imputer&#x27;,\n",
+       "                                                                   SimpleImputer()),\n",
+       "                                                                  (&#x27;scaler&#x27;,\n",
+       "                                                                   StandardScaler())]),\n",
+       "                                                  [&#x27;Age&#x27;, &#x27;Fare&#x27;,\n",
+       "                                                   &#x27;FamilySize&#x27;]),\n",
+       "                                                 (&#x27;cat&#x27;,\n",
+       "                                                  Pipeline(steps=[(&#x27;imputer&#x27;,\n",
+       "                                                                   SimpleImputer(strategy=&#x27;most_frequent&#x27;)),\n",
+       "                                                                  (&#x27;ohe&#x27;,\n",
+       "                                                                   OneHotEncoder(drop=&#x27;first&#x27;,\n",
+       "                                                                                 handle_unknown=&#x27;ignore&#x27;))]),\n",
+       "                                                  [&#x27;Pclass&#x27;, &#x27;Sex&#x27;,\n",
+       "                                                   &#x27;Embarked&#x27;])])),\n",
+       "                (&#x27;logic&#x27;, LogisticRegression())])</pre><b>In a Jupyter environment, please rerun this cell to show the HTML representation or trust the notebook. <br />On GitHub, the HTML representation is unable to render, please try loading this page with nbviewer.org.</b></div><div class=\"sk-container\" hidden><div class=\"sk-item sk-dashed-wrapped\"><div class=\"sk-label-container\"><div class=\"sk-label sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-1\" type=\"checkbox\" ><label for=\"sk-estimator-id-1\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">Pipeline</label><div class=\"sk-toggleable__content\"><pre>Pipeline(steps=[(&#x27;prep&#x27;,\n",
+       "                 ColumnTransformer(transformers=[(&#x27;num&#x27;,\n",
+       "                                                  Pipeline(steps=[(&#x27;imputer&#x27;,\n",
+       "                                                                   SimpleImputer()),\n",
+       "                                                                  (&#x27;scaler&#x27;,\n",
+       "                                                                   StandardScaler())]),\n",
+       "                                                  [&#x27;Age&#x27;, &#x27;Fare&#x27;,\n",
+       "                                                   &#x27;FamilySize&#x27;]),\n",
+       "                                                 (&#x27;cat&#x27;,\n",
+       "                                                  Pipeline(steps=[(&#x27;imputer&#x27;,\n",
+       "                                                                   SimpleImputer(strategy=&#x27;most_frequent&#x27;)),\n",
+       "                                                                  (&#x27;ohe&#x27;,\n",
+       "                                                                   OneHotEncoder(drop=&#x27;first&#x27;,\n",
+       "                                                                                 handle_unknown=&#x27;ignore&#x27;))]),\n",
+       "                                                  [&#x27;Pclass&#x27;, &#x27;Sex&#x27;,\n",
+       "                                                   &#x27;Embarked&#x27;])])),\n",
+       "                (&#x27;logic&#x27;, LogisticRegression())])</pre></div></div></div><div class=\"sk-serial\"><div class=\"sk-item sk-dashed-wrapped\"><div class=\"sk-label-container\"><div class=\"sk-label sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-2\" type=\"checkbox\" ><label for=\"sk-estimator-id-2\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">prep: ColumnTransformer</label><div class=\"sk-toggleable__content\"><pre>ColumnTransformer(transformers=[(&#x27;num&#x27;,\n",
+       "                                 Pipeline(steps=[(&#x27;imputer&#x27;, SimpleImputer()),\n",
+       "                                                 (&#x27;scaler&#x27;, StandardScaler())]),\n",
+       "                                 [&#x27;Age&#x27;, &#x27;Fare&#x27;, &#x27;FamilySize&#x27;]),\n",
+       "                                (&#x27;cat&#x27;,\n",
+       "                                 Pipeline(steps=[(&#x27;imputer&#x27;,\n",
+       "                                                  SimpleImputer(strategy=&#x27;most_frequent&#x27;)),\n",
+       "                                                 (&#x27;ohe&#x27;,\n",
+       "                                                  OneHotEncoder(drop=&#x27;first&#x27;,\n",
+       "                                                                handle_unknown=&#x27;ignore&#x27;))]),\n",
+       "                                 [&#x27;Pclass&#x27;, &#x27;Sex&#x27;, &#x27;Embarked&#x27;])])</pre></div></div></div><div class=\"sk-parallel\"><div class=\"sk-parallel-item\"><div class=\"sk-item\"><div class=\"sk-label-container\"><div class=\"sk-label sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-3\" type=\"checkbox\" ><label for=\"sk-estimator-id-3\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">num</label><div class=\"sk-toggleable__content\"><pre>[&#x27;Age&#x27;, &#x27;Fare&#x27;, &#x27;FamilySize&#x27;]</pre></div></div></div><div class=\"sk-serial\"><div class=\"sk-item\"><div class=\"sk-serial\"><div class=\"sk-item\"><div class=\"sk-estimator sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-4\" type=\"checkbox\" ><label for=\"sk-estimator-id-4\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">SimpleImputer</label><div class=\"sk-toggleable__content\"><pre>SimpleImputer()</pre></div></div></div><div class=\"sk-item\"><div class=\"sk-estimator sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-5\" type=\"checkbox\" ><label for=\"sk-estimator-id-5\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">StandardScaler</label><div class=\"sk-toggleable__content\"><pre>StandardScaler()</pre></div></div></div></div></div></div></div></div><div class=\"sk-parallel-item\"><div class=\"sk-item\"><div class=\"sk-label-container\"><div class=\"sk-label sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-6\" type=\"checkbox\" ><label for=\"sk-estimator-id-6\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">cat</label><div class=\"sk-toggleable__content\"><pre>[&#x27;Pclass&#x27;, &#x27;Sex&#x27;, &#x27;Embarked&#x27;]</pre></div></div></div><div class=\"sk-serial\"><div class=\"sk-item\"><div class=\"sk-serial\"><div class=\"sk-item\"><div class=\"sk-estimator sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-7\" type=\"checkbox\" ><label for=\"sk-estimator-id-7\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">SimpleImputer</label><div class=\"sk-toggleable__content\"><pre>SimpleImputer(strategy=&#x27;most_frequent&#x27;)</pre></div></div></div><div class=\"sk-item\"><div class=\"sk-estimator sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-8\" type=\"checkbox\" ><label for=\"sk-estimator-id-8\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">OneHotEncoder</label><div class=\"sk-toggleable__content\"><pre>OneHotEncoder(drop=&#x27;first&#x27;, handle_unknown=&#x27;ignore&#x27;)</pre></div></div></div></div></div></div></div></div></div></div><div class=\"sk-item\"><div class=\"sk-estimator sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-9\" type=\"checkbox\" ><label for=\"sk-estimator-id-9\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">LogisticRegression</label><div class=\"sk-toggleable__content\"><pre>LogisticRegression()</pre></div></div></div></div></div></div></div>"
+      ],
+      "text/plain": [
+       "Pipeline(steps=[('prep',\n",
+       "                 ColumnTransformer(transformers=[('num',\n",
+       "                                                  Pipeline(steps=[('imputer',\n",
+       "                                                                   SimpleImputer()),\n",
+       "                                                                  ('scaler',\n",
+       "                                                                   StandardScaler())]),\n",
+       "                                                  ['Age', 'Fare',\n",
+       "                                                   'FamilySize']),\n",
+       "                                                 ('cat',\n",
+       "                                                  Pipeline(steps=[('imputer',\n",
+       "                                                                   SimpleImputer(strategy='most_frequent')),\n",
+       "                                                                  ('ohe',\n",
+       "                                                                   OneHotEncoder(drop='first',\n",
+       "                                                                                 handle_unknown='ignore'))]),\n",
+       "                                                  ['Pclass', 'Sex',\n",
+       "                                                   'Embarked'])])),\n",
+       "                ('logic', LogisticRegression())])"
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "model.fit(X, y)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "72ef3855",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:07.105729Z",
+     "iopub.status.busy": "2025-10-12T11:32:07.105062Z",
+     "iopub.status.idle": "2025-10-12T11:32:07.138281Z",
+     "shell.execute_reply": "2025-10-12T11:32:07.137323Z"
+    },
+    "papermill": {
+     "duration": 0.04301,
+     "end_time": "2025-10-12T11:32:07.139794",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:07.096784",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "             Pclass                                          Name     Sex  \\\n",
+      "PassengerId                                                                 \n",
+      "892               3                              Kelly, Mr. James    male   \n",
+      "893               3              Wilkes, Mrs. James (Ellen Needs)  female   \n",
+      "894               2                     Myles, Mr. Thomas Francis    male   \n",
+      "895               3                              Wirz, Mr. Albert    male   \n",
+      "896               3  Hirvonen, Mrs. Alexander (Helga E Lindqvist)  female   \n",
+      "\n",
+      "              Age  SibSp  Parch   Ticket     Fare Cabin Embarked  \n",
+      "PassengerId                                                       \n",
+      "892          34.5      0      0   330911   7.8292   NaN        Q  \n",
+      "893          47.0      1      0   363272   7.0000   NaN        S  \n",
+      "894          62.0      0      0   240276   9.6875   NaN        Q  \n",
+      "895          27.0      0      0   315154   8.6625   NaN        S  \n",
+      "896          22.0      1      1  3101298  12.2875   NaN        S  \n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Survived</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>PassengerId</th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>892</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>893</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>894</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>895</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>896</th>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>...</th>\n",
+       "      <td>...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1305</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1306</th>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1307</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1308</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1309</th>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>418 rows × 1 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "             Survived\n",
+       "PassengerId          \n",
+       "892                 0\n",
+       "893                 0\n",
+       "894                 0\n",
+       "895                 0\n",
+       "896                 1\n",
+       "...               ...\n",
+       "1305                0\n",
+       "1306                1\n",
+       "1307                0\n",
+       "1308                0\n",
+       "1309                0\n",
+       "\n",
+       "[418 rows x 1 columns]"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "X_prediction = pd.read_csv(\"/kaggle/input/titanic/test.csv\", index_col=0)\n",
+    "print(X_prediction.head())\n",
+    "\n",
+    "DataFrameCleaner(X_prediction)\n",
+    "\n",
+    "df_final = pd.DataFrame(data=model.predict(X_prediction), index=X_prediction.index, columns=[\"Survived\"])\n",
+    "df_final"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "ee9c97e6",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2025-10-12T11:32:07.150231Z",
+     "iopub.status.busy": "2025-10-12T11:32:07.149931Z",
+     "iopub.status.idle": "2025-10-12T11:32:07.159796Z",
+     "shell.execute_reply": "2025-10-12T11:32:07.158871Z"
+    },
+    "papermill": {
+     "duration": 0.017098,
+     "end_time": "2025-10-12T11:32:07.161492",
+     "exception": false,
+     "start_time": "2025-10-12T11:32:07.144394",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "df_final.to_csv(\"/kaggle/working/\" + \"submission.csv\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "none",
+   "dataSources": [
+    {
+     "databundleVersionId": 26502,
+     "isSourceIdPinned": false,
+     "sourceId": 3136,
+     "sourceType": "competition"
+    }
+   ],
+   "dockerImageVersionId": 31089,
+   "isGpuEnabled": false,
+   "isInternetEnabled": true,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.13"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 11.125808,
+   "end_time": "2025-10-12T11:32:07.887093",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2025-10-12T11:31:56.761285",
+   "version": "2.6.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
