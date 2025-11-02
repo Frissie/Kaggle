@@ -19,7 +19,8 @@ dependencies = [
 ]
 
 [tool.poetry]
-packages = [{include = "s5e11", from = "src"}]
+package-mode = false
+packages = [{include = "s5e11", from = "Play"}]
 
 
 [tool.poetry.group.dev.dependencies]
