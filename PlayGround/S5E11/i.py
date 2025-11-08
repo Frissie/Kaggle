@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
+from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler, OneHotEncoder, StandardScaler
 
 work_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/working/"
 data_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/input/"
@@ -29,7 +29,7 @@ class Features(BaseEstimator, TransformerMixin):
 
         if y is not None:
             df["loan_paid_back"] = y.values
-            self.risk = df.groupby("employment_status")["loan_paid_back"].mean()
+            self.risk = df.groupby("employment_status", observed=True)["loan_paid_back"].mean()
 
         self.debt_to_income_ratio_mean = df["debt_to_income_ratio"].mean()
 
@@ -66,6 +66,24 @@ class Features(BaseEstimator, TransformerMixin):
         return df
 
 
+class ColumnSelector(BaseEstimator, TransformerMixin):
+    def __init__(self, columns=None):
+        self.columns = columns
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        if self.columns is None:
+            return X
+
+        drop = X.drop(columns=self.columns, errors="ignore").columns.to_list()
+
+        return X.drop(columns=drop, errors="ignore")
+
+
 columnTransformerSelector = ColumnTransformer(
     [
         (
@@ -78,8 +96,30 @@ columnTransformerSelector = ColumnTransformer(
             Pipeline(
                 [
                     (
-                        "ordinal",
+                        "encoder",
                         OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
+                    )
+                ]
+            ),
+            make_column_selector(dtype_include="category"),
+        ),
+    ]
+).set_output(transform="pandas")
+
+columnTransformerLinear = ColumnTransformer(
+    [
+        (
+            "int",
+            Pipeline([("scaler", StandardScaler())]),
+            make_column_selector(dtype_exclude="category"),
+        ),
+        (
+            "cat",
+            Pipeline(
+                [
+                    (
+                        "encoder",
+                        OneHotEncoder(drop="first", sparse_output=False),
                     )
                 ]
             ),
@@ -93,6 +133,14 @@ FeaturesToNumericalPipeline = Pipeline(
     [
         ("feature", Features()),
         ("transformer", columnTransformerSelector),
+        ("selector", ColumnSelector(columns=None)),
+    ]
+)
+FeaturesToLinearPipeline = Pipeline(
+    [
+        ("feature", Features()),
+        ("transformer", columnTransformerLinear),
+        ("selector", ColumnSelector(columns=None)),
     ]
 )
 
