@@ -18,7 +18,7 @@ params_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/workin
 
 class Features(BaseEstimator, TransformerMixin):
     def __init__(self):
-        self.risk = None
+        self
 
     def fit(self, df, y=None):
         df = df.copy()
@@ -29,7 +29,8 @@ class Features(BaseEstimator, TransformerMixin):
 
         if y is not None:
             df["loan_paid_back"] = y.values
-            self.risk = df.groupby("employment_status", observed=True)["loan_paid_back"].mean()
+            self.risk_employment = df.groupby("employment_status", observed=True)["loan_paid_back"].mean()
+            self.risk_subgrade = df.groupby("grade_subgrade", observed=True)["loan_paid_back"].mean()
 
         self.debt_to_income_ratio_mean = df["debt_to_income_ratio"].mean()
 
@@ -47,8 +48,10 @@ class Features(BaseEstimator, TransformerMixin):
         df["debt_to_income_ratio_diff"] = df["debt_to_income_ratio"] - self.debt_to_income_ratio_mean
         df["debt_to_income_ratio_norm"] = df["debt_to_income_ratio"] / self.debt_to_income_ratio_mean
 
-        if self.risk is not None:
-            df["risk_map"] = df["employment_status"].map(self.risk).astype(float)
+        if self.risk_employment is not None:
+            df["risk_employment_map"] = df["employment_status"].map(self.risk_employment).astype(float)
+        if self.risk_subgrade is not None:
+            df["risk_grade_map"] = df["grade_subgrade"].map(self.risk_subgrade).astype(float)
 
         df["credit_dti_interaction"] = df["credit_score"] / (df["debt_to_income_ratio"] + 1)
         df["income_dti_interaction"] = df["annual_income"] / (df["debt_to_income_ratio"] + 1)
@@ -146,7 +149,7 @@ FeaturesToLinearPipeline = Pipeline(
 
 xgb_params_search = {
     "xgb__booster": ["gbtree", "dart"],
-    "xgb__n_estimators": range(500, 5001, 500),
+    "xgb__n_estimators": range(500, 1501, 500),
     "xgb__learning_rate": [0.1, 0.01, 0.001, 0.3, 0.03, 0.003],
     "xgb__max_depth": range(3, 12, 2),
     "xgb__min_child_weight": range(1, 10, 2),
@@ -155,7 +158,7 @@ xgb_params_search = {
     "xgb__colsample_bytree": [0.5, 0.7, 0.9],
 }
 cat_params_search = {
-    "cat__n_estimators": range(500, 5001, 500),
+    "cat__n_estimators": range(500, 1501, 500),
     "cat__learning_rate": [0.1, 0.01, 0.001, 0.3, 0.03, 0.003],
     "cat__depth": range(4, 11, 2),
     "cat__l2_leaf_reg": range(1, 10, 2),
@@ -164,7 +167,7 @@ cat_params_search = {
     "cat__bootstrap_type": ["Bayesian", "Bernoulli", "MVS"],
 }
 lgb_params_search = {
-    "lgb__n_estimators": range(500, 5001, 500),
+    "lgb__n_estimators": range(500, 1501, 500),
     "lgb__learning_rate": [0.1, 0.01, 0.001, 0.3, 0.03, 0.003],
     "lgb__num_leaves": range(16, 257, 16),
     "lgb__max_depth": range(3, 15, 2),
@@ -178,7 +181,7 @@ lgb_params_search = {
     "lgb__boosting_type": ["gbdt", "goss", "dart"],
 }
 hgb_params_search = {
-    "hgb__max_iter": range(500, 5001, 500),
+    "hgb__max_iter": range(500, 1501, 500),
     "hgb__learning_rate": [0.1, 0.01, 0.001, 0.3, 0.03, 0.003],
     "hgb__max_depth": range(3, 15, 2),
     "hgb__min_samples_leaf": range(5, 100, 30),
