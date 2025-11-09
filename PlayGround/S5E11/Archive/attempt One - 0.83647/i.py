@@ -6,15 +6,6 @@ from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler, OneHotEncoder, StandardScaler
 
-work_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/working/"
-data_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/input/"
-svg_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/svg/"
-submissions_dir = work_dir + "submissions/"
-model_dir = work_dir + "model/"
-model_pred_train_dir = model_dir + "train_prediction/"
-model_pred_test_dir = model_dir + "test_prediction/"
-params_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/working/params/"
-
 
 class Features(BaseEstimator, TransformerMixin):
     def __init__(self):
