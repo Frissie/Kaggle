@@ -6,6 +6,9 @@ from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler, OneHotEncoder, StandardScaler
 
+kaggle_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/"
+data_dir = kaggle_dir + "input/"
+
 
 class Features(BaseEstimator, TransformerMixin):
     def __init__(self):
