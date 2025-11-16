@@ -11,30 +11,33 @@ import seaborn as sns
 import hashlib
 import pickle
 import os
+import warnings
 
+from iDirectory import data_dir, sub_dir, model_dir
 
-from iDirectory import data_dir, sub_dir
-
-from numpy.linalg import lstsq
-from tqdm.auto import tqdm
 from scipy.optimize import nnls
-from joblib import Parallel, delayed
-
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score, accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, ExtraTreesClassifier
 from sklearn.preprocessing import OneHotEncoder, PolynomialFeatures
 from sklearn.compose import ColumnTransformer
 
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.utils import set_random_seed
+from sklearn.preprocessing import StandardScaler
+
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
 
 # Disable warnings
-import warnings
 warnings.filterwarnings("ignore")
 
 
@@ -137,6 +140,9 @@ class Features(BaseEstimator, TransformerMixin):
 
     def transform(self, df):
         df = df.copy()
+        df['subgrade'] = df['grade_subgrade'].str[1:].astype(int)
+        df['grade'] = df['grade_subgrade'].str[0].astype("category")
+        df['total_debt_burden'] = (df['loan_amount'] * df['interest_rate'] / 100) / (df['annual_income'] + 1) 
 
         if self.model == "category":
             for col in self.number_columns_:
@@ -153,8 +159,8 @@ class Features(BaseEstimator, TransformerMixin):
                 ).astype("category")
 
             df = df.select_dtypes(include="category")
-            df = df.astype(str)           # CatBoost-friendly
-            df = df.fillna("Unknown")     # No missing
+            df = df.astype(str)  # CatBoost-friendly
+            df = df.fillna("Unknown")  # No missing
 
             return df
 
@@ -194,6 +200,12 @@ class Features(BaseEstimator, TransformerMixin):
 # In[ ]:
 
 
+X_inspection = Features().fit_transform(X, y)
+
+
+# In[ ]:
+
+
 categorical_cols = X.select_dtypes(include="category").columns.tolist()
 numeric_cols = X.select_dtypes(exclude="category").columns.tolist()
 
@@ -206,7 +218,9 @@ SparseView = ColumnTransformer(
 )
 
 
-# Interaction View: pairwise interactions on linear view
+# In[ ]:
+
+
 class LinearThenPoly(BaseEstimator, TransformerMixin):
     def __init__(self, degree=2, interaction_only=True):
         self.degree = degree
@@ -243,51 +257,135 @@ class CatBoostWrapper(BaseEstimator):
 
     def fit(self, X, y):
         cat_idx = list(range(X.shape[1]))  # all columns are categorical strings
-        self.model = CatBoostClassifier(
-            **self.params, 
-            cat_features=cat_idx,
-            verbose=False
-        )
+        self.model = CatBoostClassifier(**self.params, cat_features=cat_idx, verbose=False)
         self.model.fit(X, y)
         return self
 
     def predict_proba(self, X):
         return self.model.predict_proba(X)
+    
+    def get_feature_importance(self, prettified=True):
+        return self.model.get_feature_importance(prettified=prettified)
+
+
+# In[ ]:
+
+
+class KerasLinear(BaseEstimator):
+    """
+    Neural network base learner for the LINEAR view.
+    ✔ Works with Features(model="linear")
+    ✔ Automatically scales numeric inputs
+    ✔ OOF safe (no leakage)
+    ✔ predict_proba() returns 2-cols like sklearn
+    """
+
+    def __init__(
+        self,
+        hidden_units=128,
+        dropout=0.20,
+        lr=1e-3,
+        batch_size=256,
+        epochs=200,
+        random_state=42,
+    ):
+        self.hidden_units = hidden_units
+        self.dropout = dropout
+        self.lr = lr
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.random_state = random_state
+
+        self.scaler = StandardScaler()
+        self.model = None
+
+    def _build_model(self, input_dim):
+        model = Sequential(
+            [
+                Input(shape=(input_dim,)),
+                Dense(self.hidden_units, activation="relu"),
+                BatchNormalization(),
+                Dropout(self.dropout),
+                Dense(self.hidden_units, activation="relu"),
+                BatchNormalization(),
+                Dropout(self.dropout),
+                Dense(self.hidden_units // 2, activation="relu"),
+                BatchNormalization(),
+                Dropout(self.dropout),
+                Dense(self.hidden_units // 2, activation="relu"),
+                BatchNormalization(),
+                Dropout(self.dropout),
+                Dense(1, activation="sigmoid"),
+            ]
+        )
+
+        model.compile(loss="binary_crossentropy", optimizer=Adam(self.lr), metrics=["AUC"])
+        return model
+
+    def fit(self, X, y):
+        set_random_seed(self.random_state)
+
+        X_scaled = self.scaler.fit_transform(X)
+
+        self.model = self._build_model(X_scaled.shape[1])
+
+        callbacks = [
+            EarlyStopping(monitor="val_loss", patience=20, restore_best_weights=True, verbose=0),
+            ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=10, min_lr=1e-6, verbose=0),
+        ]
+
+        self.model.fit(
+            X_scaled,
+            y,
+            validation_split=0.15,
+            batch_size=self.batch_size,
+            epochs=self.epochs,
+            verbose=0,
+            callbacks=callbacks,
+        )
+        return self
+
+    def predict_proba(self, X):
+        X_scaled = self.scaler.transform(X)
+        p = self.model.predict(X_scaled, verbose=0).reshape(-1)
+        return np.column_stack([1 - p, p])
 
 
 # In[ ]:
 
 
 def pipeline_hash(pipeline):
-    """
-    Compute a reproducible hash for any sklearn pipeline.
-    Includes:
-    - class names
-    - parameters
-    - transformer settings
-    """
-    data = pickle.dumps(pipeline.get_params())
-    return hashlib.md5(data).hexdigest()
+    params = pipeline.get_params(deep=False)
+
+    safe = {}
+    for k, v in params.items():
+        if isinstance(v, (int, float, str, bool, tuple)):
+            safe[k] = v
+        else:
+            # Only keep the CLASS NAME, not the object
+            safe[k] = v.__class__.__name__
+
+    return hashlib.md5(pickle.dumps(safe)).hexdigest()
 
 
 # In[ ]:
 
 
-def fit_with_oof_cached(name, pipeline, X, y, cv, cache_dir="models_cache"):
+def fit_with_oof_cached(name, pipeline, X, y, cv, cache_dir=model_dir):
     """
     Train model sequentially with OOF predictions.
     Uses caching: loads saved results when hash matches.
     """
 
     # Create directory for this model
-    model_dir = os.path.join(cache_dir, name)
-    os.makedirs(model_dir, exist_ok=True)
+    new_model_dir = os.path.join(cache_dir, name)
+    os.makedirs(new_model_dir, exist_ok=True)
 
     # Compute hash
     current_hash = pipeline_hash(pipeline)
-    hash_path = os.path.join(model_dir, "hash.txt")
-    oof_path = os.path.join(model_dir, "oof.npy")
-    model_path = os.path.join(model_dir, "model.pkl")
+    hash_path = os.path.join(new_model_dir, "hash.txt")
+    oof_path = os.path.join(new_model_dir, "oof.npy")
+    model_path = os.path.join(new_model_dir, "model.pkl")
 
     # ----------------------
     # LOAD FROM CACHE
@@ -364,6 +462,7 @@ xgb_base = Pipeline(
             "model",
             XGBClassifier(
                 random_state=42,
+                booster="dart",
                 n_estimators=2500,
                 learning_rate=0.03,
                 max_depth=7,
@@ -390,6 +489,7 @@ xgb_inter = Pipeline(
                 max_depth=5,
                 subsample=0.8,
                 colsample_bytree=0.8,
+                enable_categorical=True,
                 tree_method="hist",
                 device="gpu",
                 n_jobs=7,
@@ -401,13 +501,16 @@ xgb_inter = Pipeline(
 cat_default = Pipeline(
     [
         ("features", Features(model="category")),
-        ("model", CatBoostWrapper(
-            random_state=42,
-            n_estimators=1500,
-            learning_rate=0.05,
-            depth=8,
-            thread_count=7,
-        )),
+        (
+            "model",
+            CatBoostWrapper(
+                random_state=42,
+                n_estimators=1500,
+                learning_rate=0.05,
+                depth=8,
+                thread_count=7,
+            ),
+        ),
     ]
 )
 
@@ -482,15 +585,62 @@ et_base = Pipeline(
     ]
 )
 
+keras_linear = Pipeline(
+    [
+        ("features", Features(model="linear")),
+        (
+            "keras",
+            KerasLinear(
+                hidden_units=128,
+                dropout=0.1,
+                lr=1e-3,
+                batch_size=256,
+                epochs=300,
+            ),
+        ),
+    ]
+)
+
+cat_linear = Pipeline([
+    ("features", Features(model="linear")),
+    ("model", CatBoostClassifier(
+        depth=6,
+        learning_rate=0.03,
+        n_estimators=2000,
+        l2_leaf_reg=3.0,
+        thread_count=7,
+        random_state=42,
+        verbose=False
+    ))
+])
+
+lgb_base = Pipeline([
+    ("features", Features()),
+    ("model", LGBMClassifier(
+        n_estimators=2500,
+        learning_rate=0.03,
+        num_leaves=64,
+        subsample=0.7,
+        colsample_bytree=0.7,
+        reg_alpha=2,
+        reg_lambda=2,
+        categorical_feature="auto",
+        random_state=42,
+        n_jobs=7
+    ))
+])
 
 base_models = {
     "xgb_base": xgb_base,
+    "lgb_base": lgb_base,
     "xgb_inter": xgb_inter,
     "cat_default": cat_default,
     "hgb_linear": hgb_linear,
     "lr_linear": lr_linear,
     "lr_sparse": lr_sparse,
     "et_base": et_base,
+    "keras_linear": keras_linear,
+    "cat_linear": cat_linear,
 }
 
 
@@ -535,9 +685,11 @@ meta_lr = LogisticRegression(
     class_weight="balanced",
     l1_ratio=0.3,
 )
+lr_trans = Features(model="linear")
+lr_pred_matrix = pd.concat([lr_trans.fit_transform(X,y), predictionMatrix], axis=1)
 
-meta_lr.fit(predictionMatrix, y)
-meta_lr_oof = meta_lr.predict_proba(predictionMatrix)[:, 1]
+meta_lr.fit(lr_pred_matrix, y)
+meta_lr_oof = meta_lr.predict_proba(lr_pred_matrix)[:, 1]
 meta_lr_auc = roc_auc_score(y, meta_lr_oof)
 meta_lr_acc = accuracy_score(y, (meta_lr_oof > 0.5).astype(int))
 print(f"\nMETA_LR  - ROC_AUC: {meta_lr_auc:.5f} - Acc: {meta_lr_acc:.5f}")
@@ -550,19 +702,22 @@ meta_xgb = XGBClassifier(
     max_depth=3,
     subsample=0.8,
     colsample_bytree=0.9,
+    enable_categorical=True,
     tree_method="hist",
     device="gpu",
     n_jobs=7,
 )
+weights, _ = nnls(predictionMatrix.values, y)
+w = weights / weights.sum()
 
-meta_xgb.fit(predictionMatrix, y)
-meta_xgb_oof = meta_xgb.predict_proba(predictionMatrix)[:, 1]
+meta_xgb.fit(lr_pred_matrix, y)
+meta_xgb_oof = meta_xgb.predict_proba(lr_pred_matrix)[:, 1]
 meta_xgb_auc = roc_auc_score(y, meta_xgb_oof)
 meta_xgb_acc = accuracy_score(y, (meta_xgb_oof > 0.5).astype(int))
 print(f"META_XGB - ROC_AUC: {meta_xgb_auc:.5f} - Acc: {meta_xgb_acc:.5f}")
 
 # Simple blender on train: average of meta models
-meta_blend_oof = 0.6 * meta_lr_oof + 0.4 * meta_xgb_oof
+meta_blend_oof = (predictionMatrix.values * w).sum(axis=1)
 meta_blend_auc = roc_auc_score(y, meta_blend_oof)
 meta_blend_acc = accuracy_score(y, (meta_blend_oof > 0.5).astype(int))
 print(f"BLEND    - ROC_AUC: {meta_blend_auc:.5f} - Acc: {meta_blend_acc:.5f}")
@@ -577,10 +732,13 @@ PredProbMatrix = pd.DataFrame(
     index=X_pred.index,
 )
 
+lr_pred_Prob_matrix = pd.concat([lr_trans.transform(X_pred), PredProbMatrix], axis=1)
+
+
 # Level-2 predictions on test
-meta_lr_test = meta_lr.predict_proba(PredProbMatrix)[:, 1]
-meta_xgb_test = meta_xgb.predict_proba(PredProbMatrix)[:, 1]
-meta_blend_test = 0.6 * meta_lr_test + 0.4 * meta_xgb_test
+meta_lr_test = meta_lr.predict_proba(lr_pred_Prob_matrix)[:, 1]
+meta_xgb_test = meta_xgb.predict_proba(lr_pred_Prob_matrix)[:, 1]
+meta_blend_test = (PredProbMatrix.values * w).sum(axis=1)
 
 # Final submission (you can also submit meta_lr_test or meta_xgb_test separately)
 submission = pd.DataFrame(
@@ -588,6 +746,18 @@ submission = pd.DataFrame(
     index=X_pred.index,
 )
 submission.reset_index().to_parquet(sub_dir + "submission_elite_stack.parquet")
+
+submission_xgb = pd.DataFrame(
+    {TARGET_COL: meta_xgb_test},
+    index=X_pred.index,
+)
+submission_xgb.reset_index().to_parquet(sub_dir + "submission_elite_stack_xgb.parquet")
+
+submission_lr = pd.DataFrame(
+    {TARGET_COL: meta_lr_test},
+    index=X_pred.index,
+)
+submission_lr.reset_index().to_parquet(sub_dir + "submission_elite_stack_lr.parquet")
 print("\nSaved submission to:", sub_dir + "submission_elite_stack.parquet")
 
 
@@ -598,9 +768,6 @@ print("======================")
 print(" DIAGNOSTICS MODULE ")
 print("======================\n")
 
-# ----------------------------------------------------------------------
-# 1. BASE-MODEL OOF AUC RANKING
-# ----------------------------------------------------------------------
 
 print("1. BASE MODEL OOF PERFORMANCE\n")
 auc_scores = {name: roc_auc_score(y, predictionMatrix[name]) for name in predictionMatrix.columns}
@@ -608,10 +775,6 @@ auc_df = pd.DataFrame.from_dict(auc_scores, orient="index", columns=["AUC"])
 auc_df = auc_df.sort_values("AUC", ascending=False)
 print(auc_df, "\n")
 
-
-# ----------------------------------------------------------------------
-# 2. PAIRWISE CORRELATIONS (HEATMAP)
-# ----------------------------------------------------------------------
 
 print("2. CORRELATION BETWEEN BASE MODELS\n")
 
@@ -623,10 +786,6 @@ plt.show()
 print("\nLower correlation = better stacking diversity.\n")
 
 
-# ----------------------------------------------------------------------
-# 3. MUTUAL INFORMATION WITH TARGET
-# ----------------------------------------------------------------------
-
 print("3. MUTUAL INFORMATION WITH TARGET\n")
 
 mi_scores = mutual_info_classif(predictionMatrix, y, discrete_features=False, random_state=42)
@@ -636,9 +795,6 @@ mi_df = pd.DataFrame(mi_scores, index=predictionMatrix.columns, columns=["Mutual
 print(mi_df, "\n")
 
 
-# ----------------------------------------------------------------------
-# 4. MARGINAL CONTRIBUTION (DROP-MODEL TEST)
-# ----------------------------------------------------------------------
 
 print("4. MARGINAL CONTRIBUTION OF EACH MODEL (DROP TEST)\n")
 
@@ -664,10 +820,6 @@ print(drop_df, "\n")
 print("Interpretation: High-positive means the model is valuable.\n")
 
 
-# ----------------------------------------------------------------------
-# 5. STACKING GAIN REPORT
-# ----------------------------------------------------------------------
-
 print("5. STACKING GAIN OVER BEST SINGLE MODEL\n")
 
 best_single = auc_df.iloc[0]["AUC"]
@@ -676,10 +828,6 @@ print(f"Best single model: {best_single:.5f}")
 print(f"Stack (blend) AUC: {meta_blend_auc:.5f}")
 print(f"Gain from stacking: {gain:.5f}\n")
 
-
-# ----------------------------------------------------------------------
-# 6. OPTIMAL BLENDING WEIGHTS (NNLS SOLVER)
-# ----------------------------------------------------------------------
 
 print("6. OPTIMAL BLENDING WEIGHTS (NNLS)\n")
 
@@ -695,11 +843,8 @@ blend_df = pd.DataFrame(weights / weights.sum(), index=predictionMatrix.columns,
 
 print(blend_df, "\n")
 
-# ----------------------------------------------------------------------
-# 8. WHICH VIEW CONTRIBUTES MOST? (VIEW EFFECTIVENESS)
-# ----------------------------------------------------------------------
 
-print("8. VIEW EFFECTIVENESS\n")
+print("7. VIEW EFFECTIVENESS\n")
 
 view_map = {
     "xgb_base": "BaseView",
@@ -709,19 +854,22 @@ view_map = {
     "lr_linear": "LinearView",
     "lr_sparse": "SparseView",
     "et_base": "BaseView",
+    "keras_linear": "LinearView",
 }
 
-predictionMatrix_with_view = predictionMatrix.copy()
-predictionMatrix_with_view["view"] = predictionMatrix_with_view.columns.map(lambda c: view_map.get(c, "Unknown"))
+# Use the AUCs you already computed above
+view_df = pd.DataFrame({
+    "model": predictionMatrix.columns,
+    "view": predictionMatrix.columns.map(lambda c: view_map.get(c, "Unknown")),
+    "AUC": [auc_scores[m] for m in predictionMatrix.columns],
+})
 
-print(predictionMatrix_with_view.groupby("view").mean(), "\n")
+print(view_df, "\n")
+print("Mean AUC per view:\n", view_df.groupby("view")["AUC"].mean(), "\n")
 
 
-# ----------------------------------------------------------------------
-# 9. MODEL DIVERSITY SCORE (THE HOLY GRAIL)
-# ----------------------------------------------------------------------
 
-print("9. MODEL DIVERSITY SCORE (1 - |correlation| means diversity)\n")
+print("8. MODEL DIVERSITY SCORE (1 - |correlation| means diversity)\n")
 
 corr = predictionMatrix.corr().abs()
 diversity = 1 - corr
