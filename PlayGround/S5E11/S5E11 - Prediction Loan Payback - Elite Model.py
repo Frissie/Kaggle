@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[31]:
 
 
 import numpy as np
@@ -63,7 +63,7 @@ y_orig = orig[TARGET_COL]
 X_orig = orig[X.columns]  # align columns
 
 
-# In[ ]:
+# In[32]:
 
 
 class Features(BaseEstimator, TransformerMixin):
@@ -197,13 +197,13 @@ class Features(BaseEstimator, TransformerMixin):
             return df
 
 
-# In[ ]:
+# In[33]:
 
 
 X_inspection = Features().fit_transform(X, y)
 
 
-# In[ ]:
+# In[34]:
 
 
 categorical_cols = X.select_dtypes(include="category").columns.tolist()
@@ -218,7 +218,7 @@ SparseView = ColumnTransformer(
 )
 
 
-# In[ ]:
+# In[35]:
 
 
 class LinearThenPoly(BaseEstimator, TransformerMixin):
@@ -247,7 +247,7 @@ class LinearThenPoly(BaseEstimator, TransformerMixin):
         return X_poly
 
 
-# In[ ]:
+# In[36]:
 
 
 class CatBoostWrapper(BaseEstimator):
@@ -268,7 +268,7 @@ class CatBoostWrapper(BaseEstimator):
         return self.model.get_feature_importance(prettified=prettified)
 
 
-# In[ ]:
+# In[37]:
 
 
 class KerasLinear(BaseEstimator):
@@ -351,7 +351,7 @@ class KerasLinear(BaseEstimator):
         return np.column_stack([1 - p, p])
 
 
-# In[ ]:
+# In[38]:
 
 
 def pipeline_hash(pipeline):
@@ -368,7 +368,7 @@ def pipeline_hash(pipeline):
     return hashlib.md5(pickle.dumps(safe)).hexdigest()
 
 
-# In[ ]:
+# In[39]:
 
 
 def fit_with_oof_cached(name, pipeline, X, y, cv, cache_dir=model_dir):
@@ -435,7 +435,7 @@ def fit_with_oof_cached(name, pipeline, X, y, cv, cache_dir=model_dir):
     return oof, final_model
 
 
-# In[ ]:
+# In[40]:
 
 
 def train_all_cached(base_models, X, y, cv):
@@ -451,7 +451,7 @@ def train_all_cached(base_models, X, y, cv):
     return oof_dict, final_dict
 
 
-# In[ ]:
+# In[41]:
 
 
 # Base View: Features() -> XGB
@@ -601,50 +601,61 @@ keras_linear = Pipeline(
     ]
 )
 
-cat_linear = Pipeline([
-    ("features", Features(model="linear")),
-    ("model", CatBoostClassifier(
-        depth=6,
-        learning_rate=0.03,
-        n_estimators=2000,
-        l2_leaf_reg=3.0,
-        thread_count=7,
-        random_state=42,
-        verbose=False
-    ))
-])
+cat_linear = Pipeline(
+    [
+        ("features", Features(model="linear")),
+        (
+            "model",
+            CatBoostClassifier(
+                depth=6,
+                learning_rate=0.03,
+                n_estimators=2000,
+                l2_leaf_reg=3.0,
+                thread_count=7,
+                random_state=42,
+                verbose=False,
+            ),
+        ),
+    ]
+)
 
-lgb_base = Pipeline([
-    ("features", Features()),
-    ("model", LGBMClassifier(
-        n_estimators=2500,
-        learning_rate=0.03,
-        num_leaves=64,
-        subsample=0.7,
-        colsample_bytree=0.7,
-        reg_alpha=2,
-        reg_lambda=2,
-        categorical_feature="auto",
-        random_state=42,
-        n_jobs=7
-    ))
-])
+lgb_base = Pipeline(
+    [
+        ("features", Features()),
+        (
+            "model",
+            LGBMClassifier(
+                n_estimators=2500,
+                learning_rate=0.03,
+                num_leaves=64,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                reg_alpha=2,
+                reg_lambda=2,
+                categorical_feature="auto",
+                random_state=42,
+                n_jobs=7,
+                verbose=-1,
+            ),
+        ),
+    ]
+)
 
 base_models = {
-    "xgb_base": xgb_base,
+    # "xgb_base": xgb_base,
     "lgb_base": lgb_base,
     "xgb_inter": xgb_inter,
-    "cat_default": cat_default,
-    "hgb_linear": hgb_linear,
-    "lr_linear": lr_linear,
-    "lr_sparse": lr_sparse,
+    # "cat_default": cat_default,
+    # "hgb_linear": hgb_linear,
+    # "lr_linear": lr_linear,
+    # "lr_sparse": lr_sparse,
     "et_base": et_base,
     "keras_linear": keras_linear,
     "cat_linear": cat_linear,
 }
 
 
-# In[ ]:
+# In[42]:
 
 
 oof_dict, final_models = train_all_cached(base_models, X, y, cv)
@@ -672,7 +683,7 @@ plt.title("Correlation between base model OOF preds and target")
 plt.show()
 
 
-# In[ ]:
+# In[43]:
 
 
 # Meta model 1: Logistic Regression
@@ -688,8 +699,8 @@ meta_lr = LogisticRegression(
 lr_trans = Features(model="linear")
 lr_pred_matrix = pd.concat([lr_trans.fit_transform(X,y), predictionMatrix], axis=1)
 
-meta_lr.fit(lr_pred_matrix, y)
-meta_lr_oof = meta_lr.predict_proba(lr_pred_matrix)[:, 1]
+meta_lr.fit(predictionMatrix, y)
+meta_lr_oof = meta_lr.predict_proba(predictionMatrix)[:, 1]
 meta_lr_auc = roc_auc_score(y, meta_lr_oof)
 meta_lr_acc = accuracy_score(y, (meta_lr_oof > 0.5).astype(int))
 print(f"\nMETA_LR  - ROC_AUC: {meta_lr_auc:.5f} - Acc: {meta_lr_acc:.5f}")
@@ -723,7 +734,7 @@ meta_blend_acc = accuracy_score(y, (meta_blend_oof > 0.5).astype(int))
 print(f"BLEND    - ROC_AUC: {meta_blend_auc:.5f} - Acc: {meta_blend_acc:.5f}")
 
 
-# In[ ]:
+# In[44]:
 
 
 # Level-1 predictions on test
@@ -736,7 +747,7 @@ lr_pred_Prob_matrix = pd.concat([lr_trans.transform(X_pred), PredProbMatrix], ax
 
 
 # Level-2 predictions on test
-meta_lr_test = meta_lr.predict_proba(lr_pred_Prob_matrix)[:, 1]
+meta_lr_test = meta_lr.predict_proba(PredProbMatrix)[:, 1]
 meta_xgb_test = meta_xgb.predict_proba(lr_pred_Prob_matrix)[:, 1]
 meta_blend_test = (PredProbMatrix.values * w).sum(axis=1)
 
@@ -761,7 +772,7 @@ submission_lr.reset_index().to_parquet(sub_dir + "submission_elite_stack_lr.parq
 print("\nSaved submission to:", sub_dir + "submission_elite_stack.parquet")
 
 
-# In[ ]:
+# In[45]:
 
 
 print("======================")
