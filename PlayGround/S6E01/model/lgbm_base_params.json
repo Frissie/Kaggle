@@ -1,0 +1,17 @@
+{
+    "learning_rate": 0.0277993931187874,
+    "n_estimators": 5014,
+    "num_leaves": 344,
+    "max_depth": 59,
+    "min_data_in_leaf": 89,
+    "min_child_weight": 0.8945335588186097,
+    "min_split_gain": 3.8029204324335515,
+    "lambda_l1": 1.3864864756259642e-05,
+    "lambda_l2": 0.5825549352737858,
+    "bagging_fraction": 0.8186727976415629,
+    "bagging_freq": 7,
+    "feature_fraction": 0.5116646618518729,
+    "max_bin": 249,
+    "grow_policy": "lossguide",
+    "extra_trees": false
+}

@@ -1,5 +1,5 @@
 FeatureFrame.csv
 catboost_info/
-model/
+# model/
 test.ipynb
 *.pkl
