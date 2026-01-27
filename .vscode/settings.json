@@ -1,0 +1,8 @@
+{
+  "python.analysis.extraPaths": [
+    "."
+  ],
+  "material-icon-theme.folders.associations": {
+    "kaggle_modules": "packages"
+  },
+}
