@@ -1,5 +1,0 @@
-kaggle_dir = "C:/Users/Blanc/DataScientist/Kaggle/PlayGround/S5E11/kaggle/"
-data_dir = kaggle_dir + "input/"
-sub_dir = kaggle_dir + "working/"
-svg_dir = kaggle_dir + "svg/"
-model_dir = kaggle_dir + "model/"
