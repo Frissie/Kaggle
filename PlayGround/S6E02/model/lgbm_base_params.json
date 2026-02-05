@@ -1,0 +1,16 @@
+{
+    "learning_rate": 0.02513557516254144,
+    "n_estimators": 3157,
+    "num_leaves": 56,
+    "max_depth": 4,
+    "min_child_samples": 31,
+    "min_child_weight": 0.7434673367103857,
+    "min_split_gain": 0.8287296370260987,
+    "subsample": 0.8793707695281389,
+    "subsample_freq": 1,
+    "feature_fraction": 0.6468287252556255,
+    "reg_alpha": 1.8309486735951253e-07,
+    "reg_lambda": 0.04042022140793103,
+    "max_bin": 230,
+    "scale_pos_weight": 0.8934619791970846
+}
